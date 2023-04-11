@@ -1,22 +1,25 @@
 import openai
 import numpy as np
 import requests
-from openai.embeddings_utils import get_embedding
 import openai
+from sentence_transformers import SentenceTransformer, util
+import os
+import io
+from PIL import Image
 
+model = SentenceTransformer('all-MiniLM-L6-v2')
 
 limit = 1
 task_list = ['不知道这个问题是哪一类任务',
              '文本相关任务:直接以文本方式回答用户的问题,包括问答,闲聊,文本生成等.',
              '图片问答任务:给出一张图片,然后回答与图片相关的问题.通常会问"图中的是什么东西?", "图中的东西在干什么?", "图中的东西长什么样子?"等.',
              '图片生成任务:用户描述一张图片,然后生成这样的图片,通常会说"画一只白色的猫", "draw a photo of a happy corgi puppy sitting"等.',
-             '音频转文本任务:给出一段音频,然后转成文本.如果用户给出了一个音频路径,通常为avi,mp4,mp3等格式的路径,或者要求把音频转为文字,"音频转文本",则认为属于音频转文本任务.']
-task_embeddings = None
+             ]
+             # '音频转文本任务:给出一段音频,然后转成文本.如果用户给出了一个音频路径,通常为avi,mp4,mp3等格式的路径,或者要求把音频转为文字,"音频转文本",则认为属于音频转文本任务.']
 
 
 def init_prompt():
-    global task_embeddings
-    task_embeddings = [get_embedding(task) for task in task_list]
+    task_embeddings = get_embs(task_list)
     # todo: support more modalities(eg. audio related...)
     prompt = f'''
     你是一个分类器,你的任务是根据用户的问题,判断这个问题是哪一类人工智能领域的任务,然后给出答案.
@@ -24,7 +27,6 @@ def init_prompt():
     1. {task_list[1]}.
     2. {task_list[2]}.
     3. {task_list[3]}.
-    4. {task_list[4]}.
     如果你不知道这个问题是哪一类任务,或者不理解用户的话,则回答"{task_list[0]}".
     你的回答只能在以上几类任务中选择一个,并且详细描述,以下是一些例子:
 
@@ -49,15 +51,17 @@ def init_prompt():
     Q: "sahfjlsdhf"这个问题是哪一类任务?
     A: {task_list[0]}
 
-    Q: "请把上面的音频转成文本"这个问题是哪一类任务?
-    A: {task_list[4]}
-
-    Q: "D:/download/asd.mp3"这个问题是哪一类任务?
-    A: {task_list[4]}
-
     '''
+    # Q: "请把上面的音频转成文本"这个问题是哪一类任务?
+    # A: {task_list[4]}
+    #
+    # Q: "D:/download/asd.mp3"这个问题是哪一类任务?
+    # A: {task_list[4]}
+    #
+    # '''
 
-    return prompt
+    # prompt = 'this is a prompt'
+    return prompt, task_embeddings
 
 
 
@@ -70,7 +74,9 @@ def chat_solution(history, task_ids, limit=1):
       model="gpt-3.5-turbo",
       messages=[{"role": "system", "content": "You are a helpful assistant."}] +
                [{"role": user_assistant_pair[idx % 2], "content": p} for idx, p in enumerate(prompts)] +
-               [{"role": "user", "content": "{}".format(history[-1][0])}]
+               [{"role": "user", "content": "{}".format(history[-1][0])}],
+      api_key=os.environ['OPENAI_API_KEY'],
+
     )
     message = complete.choices[0].message.content
     history[-1][1] = message
@@ -78,21 +84,37 @@ def chat_solution(history, task_ids, limit=1):
 
 
 def image_generation_solution(history, task_ids):
-    last_prompt = history[-1][0]
-    response = openai.Image.create(
-        prompt=last_prompt,
-        n=1,
-        size="512x512"
-    )
-    image_url = response['data'][0]['url']
-    # download image and place it in the pics folder
-    image = requests.get(image_url)
-    image_name = image_url.split("/")[-1]
-    with open("pics/" + image_name, "wb") as f:
-        f.write(image.content)
-    history[-1][1] = image_name
+    API_URL = "https://api-inference.huggingface.co/models/BAAI/AltDiffusion"
+    headers = {"Authorization": f"Bearer {os.environ['HF_API_KEY']}"}
 
+    def query(payload):
+        response = requests.post(API_URL, headers=headers, json=payload)
+        return response.content
+
+    prompt = history[-1][0]
+    prompt = prompt.replace('画', '')
+    prompt = prompt.replace('请', '')
+    prompt = prompt.replace('给我', '')
+    prompt = prompt.replace('我要', '')
+    prompt = prompt.replace('我想', '')
+    prompt = prompt.replace('帮我', '')
+
+    # better quality
+    prompt += ',高清,8K,4k,充满细节(full details),艺术的,有创意的'
+
+
+    image_bytes = query({
+        "inputs": f"{prompt}",
+    })
+    # You can access the image with PIL.Image for example
+    image = Image.open(io.BytesIO(image_bytes))
+    save_path = 'pics/' + str(len(os.listdir('pics')) + 1) + '.jpg'
+    if not os.path.exists('pics'):
+        os.makedirs('pics')
+    image.save(save_path)
+    history[-1][1] = (save_path, )
     return history
+
 
 
 def audio_to_text_solution(history, task_ids):
@@ -110,3 +132,13 @@ def audio_to_text_solution(history, task_ids):
     text = resp['text']
     history[-1][1] = text
     return history
+
+
+def get_embs(descs):
+    return model.encode(descs, convert_to_tensor=True)
+
+def get_sim(desc, task_embs):
+    desc_emb = model.encode(desc, convert_to_tensor=True)
+    cos_scores = util.pytorch_cos_sim(desc_emb, task_embs)[0]
+    return cos_scores
+

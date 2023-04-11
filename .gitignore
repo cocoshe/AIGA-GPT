@@ -129,3 +129,9 @@ dmypy.json
 .pyre/
 
 tset.py
+1.jpg
+pics/*.jpg
+a_gradio.py
+image.png
+sd_demo.py
+.idea
