@@ -51,8 +51,8 @@ def get_resp(task_id, task_descriptions, prompt, history, limit, task_ids):
         print('process text task')
         return chat_solution(history, limit=limit, task_ids=task_ids)
     elif task_id == 2:  # 图像VQA  # todo: blip
-        pass
-        # return blip_solution(history)
+        print('process vqa task')
+        return vqa_solution(history, limit=limit, task_ids=task_ids)
     elif task_id == 3:  # 图像生成
         print('process image generation')
         return image_generation_solution(history, task_ids=task_ids)
