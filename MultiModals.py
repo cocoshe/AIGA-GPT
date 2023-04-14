@@ -44,6 +44,7 @@ def get_task_id(task_description, task_embs):
 
 
 def get_resp(task_id, task_descriptions, prompt, history, limit, task_ids):
+    if history[-1][1] is None: history = history[:-1]
     if task_id == 0:
         history[-1][1] = task_descriptions
         return history

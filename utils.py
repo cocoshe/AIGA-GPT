@@ -128,6 +128,8 @@ def image_generation_solution(history, task_ids):
     # API_URL = "https://api-inference.huggingface.co/models/BAAI/AltDiffusion"  # ZH, seems not working
     # API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-1"  # EN
     API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2"
+    # API_URL = "https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5"
+
     headers = {"Authorization": f"Bearer {os.environ['HF_API_KEY']}"}
 
     def query(payload):
